@@ -5,6 +5,7 @@
  */
 
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -441,4 +442,91 @@ test('拿不到 workspaceRegistry 时回退到进程目录（并留下可读路�
 
   // 只删掉本用例自己写出的文件，绝不动同目录下别人的图片。
   await rm(saved.path, { force: true })
+})
+
+// —— 安全边界：参考图与下载内容的准入 ——
+
+test('本地非图片文件不会被内联外发（防误传私钥、凭据）', async (t) => {
+  const { tool, dir, exec } = await scenario(t)
+  const secret = join(dir, 'id_rsa')
+  await writeFile(secret, '-----BEGIN OPENSSH PRIVATE KEY-----\nnot an image at all\n')
+  const calls = mockFetch(t, happyHandler)
+
+  await assert.rejects(
+    () => tool.execute({ prompt: 'x', image: [secret] }, exec),
+    /is not a raster image/,
+  )
+  assert.equal(calls.length, 0, '被拒绝的文件绝不能发往任何网络地址')
+})
+
+test('非图片 Data URI 被拒绝，图片 Data URI 原样透传', async (t) => {
+  const { tool, exec } = await scenario(t)
+  const calls = mockFetch(t, happyHandler)
+
+  await assert.rejects(
+    () => tool.execute({ prompt: 'x', image: ['data:text/plain;base64,aGVsbG8='] }, exec),
+    /Only base64 image Data URIs/,
+  )
+  assert.equal(calls.length, 0)
+
+  const dataUri = `data:image/png;base64,${PNG_1X1.toString('base64')}`
+  await tool.execute({ prompt: 'x', image: [dataUri] }, exec)
+  assert.deepEqual(JSON.parse(calls[0].init.body).extra_body.image, [dataUri])
+})
+
+test('拒绝下载非 HTTP(S) 的图片地址', async (t) => {
+  const { tool, exec } = await scenario(t)
+  mockFetch(t, (url) =>
+    url.includes('/images/generations')
+      ? jsonResponse({ created: 1, data: [{ url: 'file:///etc/passwd' }] })
+      : bytesResponse(PNG_1X1),
+  )
+
+  await assert.rejects(() => tool.execute({ prompt: 'x' }, exec), /non-HTTP\(S\)/)
+})
+
+test('超过体积上限的下载被拒绝（先看 content-length）', async (t) => {
+  const { tool, exec } = await scenario(t)
+  mockFetch(t, (url) =>
+    url.includes('/images/generations')
+      ? jsonResponse({ created: 1, data: [{ url: 'https://cdn.example.test/huge.png' }] })
+      : {
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name) =>
+            ({ 'content-type': 'image/png', 'content-length': String(200 * 1024 * 1024) })[String(name).toLowerCase()] ?? null,
+        },
+        text: async () => '',
+        arrayBuffer: async () => new ArrayBuffer(0),
+      },
+  )
+
+  await assert.rejects(() => tool.execute({ prompt: 'x' }, exec), /over the 64 MB limit/)
+})
+
+test('服务端返回的不是图片时拒绝写入磁盘', async (t) => {
+  const { tool, dir, exec } = await scenario(t)
+  const html = Buffer.from('<script>alert(1)</script>')
+  mockFetch(t, (url) =>
+    url.includes('/images/generations')
+      ? jsonResponse({ created: 1, data: [{ url: 'https://cdn.example.test/evil.html' }] })
+      : {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => (String(name).toLowerCase() === 'content-type' ? 'text/html' : null) },
+        text: async () => html.toString(),
+        arrayBuffer: async () => Uint8Array.from(html).buffer,
+      },
+  )
+
+  await assert.rejects(() => tool.execute({ prompt: 'x' }, exec), /not an image/)
+
+  // 目录可能已经被创建（mkdir 发生在下载之前），但里面不该有任何文件。
+  const root = join(dir, 'generated-images')
+  if (existsSync(root)) {
+    for (const dateDir of await readdir(root)) {
+      assert.deepEqual(await readdir(join(root, dateDir)), [], '被拒绝的内容不应落盘')
+    }
+  }
 })

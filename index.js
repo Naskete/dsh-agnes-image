@@ -25,7 +25,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { extname, isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 /** Tool name as the model sees it. */
 const TOOL_NAME = 'agnes_generate_image'
@@ -41,14 +41,6 @@ const EXTENSIONS = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
-}
-
-const EXTENSION_MEDIA_TYPES = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
 }
 
 /**
@@ -77,6 +69,9 @@ const KEY_FILE = process.env.AGNES_API_KEY_FILE ?? join(homedir(), '.dsh', 'agne
 
 /** Refuse to inline enormous local reference images: the whole file becomes base64 in one request. */
 const MAX_REFERENCE_BYTES = 12 * 1024 * 1024
+
+/** Cap on a generated image we are willing to pull down and write to disk. */
+const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 
 export const name = 'agnes-image'
 
@@ -221,6 +216,28 @@ function keyFromFile() {
     // No key file, or it is unreadable: not an error on its own.
   }
   return undefined
+}
+
+/**
+ * Recognize a raster image by its magic bytes, strictly.
+ *
+ * `extensionFor` falls back to `png` when it cannot tell; this one answers `null`
+ * instead, which is what callers need when the question is "may I read/send this
+ * file at all?" rather than "what should I call it?".
+ *
+ * @param {Uint8Array} bytes - Encoded file bytes.
+ * @returns {'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | null} Detected type, or null.
+ */
+function sniffImageMediaType(bytes) {
+  if (bytes.length < 12) return null
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) return 'image/webp'
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif'
+  return null
 }
 
 /**
@@ -417,7 +434,20 @@ export function apply(ctx, config) {
    */
   async function toImageReference(reference, cwd) {
     const trimmed = reference.trim()
-    if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:')) return trimmed
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+
+    // A Data URI is already inline data, so there is nothing to read — but only
+    // base64 image payloads are forwarded; anything else is refused here rather
+    // than handed to the provider.
+    if (/^data:/i.test(trimmed)) {
+      if (!/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(trimmed)) {
+        throw new Error(
+          `Only base64 image Data URIs are accepted, e.g. data:image/png;base64,....\n`
+          + `只接受 base64 图片 Data URI（形如 data:image/png;base64,...）；其它 data: 内容会被拒绝。`,
+        )
+      }
+      return trimmed
+    }
 
     const absolute = isAbsolute(trimmed) ? trimmed : resolve(cwd, trimmed)
     let bytes
@@ -434,9 +464,17 @@ export function apply(ctx, config) {
         + `参考图 "${reference}" 有 ${Math.round(bytes.byteLength / 1024 / 1024)} MB，超过 ${MAX_REFERENCE_BYTES / 1024 / 1024} MB 上限——本地文件需以 base64 内联，请先压缩或改用公网 URL。`,
       )
     }
-    const byExtension = EXTENSION_MEDIA_TYPES[extname(absolute).toLowerCase()]
-    const mediaType = byExtension ?? imageMediaType(null, new Uint8Array(bytes))
-    return `data:${mediaType};base64,${bytes.toString('base64')}`
+    // Only files that are provably images leave this machine. A path handed over
+    // by mistake — or by a prompt-injected model, say `~/.ssh/id_rsa` — must not
+    // turn into an upload: the bytes are about to be sent to a third-party API.
+    const sniffed = sniffImageMediaType(bytes)
+    if (sniffed === null) {
+      throw new Error(
+        `"${reference}" is not a raster image (PNG / JPEG / WebP / GIF) / "${reference}" 不是受支持的图片文件（PNG / JPEG / WebP / GIF）。\n`
+        + `本地参考图会被读出来发送给 Agnes，所以只有能按文件头确认为图片的文件才会被内联。`,
+      )
+    }
+    return `data:${sniffed};base64,${bytes.toString('base64')}`
   }
 
   ctx.effect(() =>
@@ -657,15 +695,54 @@ export function apply(ctx, config) {
 
           if (typeof entry?.b64_json === 'string' && entry.b64_json.length > 0) {
             bytes = new Uint8Array(Buffer.from(entry.b64_json, 'base64'))
+            if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
+              throw new Error(
+                `The inline image is larger than ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB / 内联图片超过 ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB 上限，已拒绝写入。`,
+              )
+            }
           } else if (typeof entry?.url === 'string' && entry.url.length > 0) {
-            const imageResponse = await fetch(entry.url, { signal: controller.signal })
+            let target
+            try {
+              target = new URL(entry.url)
+            } catch {
+              throw new Error(`The provider returned an unusable image URL / 服务端返回的图片地址无法解析：${entry.url.slice(0, 200)}`)
+            }
+            if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+              throw new Error(`Refusing to download a non-HTTP(S) image URL (${target.protocol}) / 拒绝下载非 HTTP(S) 地址：${target.protocol}`)
+            }
+
+            const imageResponse = await fetch(target, { signal: controller.signal })
             if (!imageResponse.ok) {
               throw new Error(`Failed to download the generated image / 下载生成的图片失败：HTTP ${imageResponse.status}`)
             }
             reportedType = imageResponse.headers.get('content-type')
-            bytes = new Uint8Array(await imageResponse.arrayBuffer())
+
+            // Never buffer an unbounded response into memory: check the declared
+            // length first, then the real one.
+            const declared = Number(imageResponse.headers.get('content-length'))
+            if (Number.isFinite(declared) && declared > MAX_DOWNLOAD_BYTES) {
+              throw new Error(
+                `The generated image claims ${Math.round(declared / 1024 / 1024)} MB, over the ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB limit / 图片体积超过上限，已放弃下载。`,
+              )
+            }
+            const buffer = await imageResponse.arrayBuffer()
+            if (buffer.byteLength > MAX_DOWNLOAD_BYTES) {
+              throw new Error(
+                `The generated image is larger than ${MAX_DOWNLOAD_BYTES / 1024 / 1024} MB / 图片体积超过上限，已放弃写入。`,
+              )
+            }
+            bytes = new Uint8Array(buffer)
           } else {
             continue
+          }
+
+          // Same reasoning as the reference path: only real image bytes get written
+          // into the workspace, so a hijacked/odd response cannot drop arbitrary
+          // content on disk under an image name.
+          if (sniffImageMediaType(bytes) === null && !/^image\//i.test(reportedType ?? '')) {
+            throw new Error(
+              `The provider returned content that is not an image (Content-Type: ${reportedType ?? 'none'}) / 服务端返回的内容不是图片（Content-Type: ${reportedType ?? '无'}），已拒绝写入。`,
+            )
           }
 
           const mediaType = imageMediaType(reportedType, bytes)
