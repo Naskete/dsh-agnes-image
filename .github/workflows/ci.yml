@@ -1,0 +1,34 @@
+# CI：语法检查 + 离线测试（不需要 API Key，不联网）
+
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Syntax check
+        run: |
+          node --check index.js
+          for file in test/*.mjs; do node --check "$file"; done
+
+      - name: Validate locale JSON
+        run: |
+          node -e "for (const f of ['locale/zh.json','locale/en.json','package.json']) JSON.parse(require('node:fs').readFileSync(f,'utf8'))"
+
+      - name: Test
+        run: node --test

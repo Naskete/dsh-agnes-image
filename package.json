@@ -1,0 +1,69 @@
+{
+  "name": "dsh-agnes-image",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 生图插件：文生图 / 图生图 / 多图合成，基于 Agnes AI（agnes-image-2.5-flash）。零依赖，纯 JavaScript，无需构建。 | DSH image generation plugin for DeepSeek Harness: text-to-image, image-to-image, and multi-image composition via Agnes AI.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "cordis",
+    "image-generation",
+    "text-to-image",
+    "image-to-image",
+    "image-editing",
+    "ai-image",
+    "ai-art",
+    "agnes",
+    "agnes-ai",
+    "生图",
+    "文生图",
+    "图生图",
+    "图片生成",
+    "图片编辑"
+  ],
+  "license": "MIT",
+  "author": "YOUR_GITHUB_NAME",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "docs/preview.jpg",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image.git"
+  },
+  "homepage": "https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image#readme",
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "meta": {
+    "title": "Agnes 图片生成",
+    "description": "通过 Agnes AI（agnes-image-2.5-flash）生成或编辑图片，自动转存到工作区。"
+  },
+  "icon": "./icon.svg"
+}

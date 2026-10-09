@@ -1,0 +1,17 @@
+# dsh-agnes-image 的 bundle 层：把一个插件行插入 Loader，交给 profile 消费。
+#
+# 行里的 `name` 是包名（不是路径），由 Node 解析到已安装的包，所以本文件既可以
+# 随包发布，也可以在 profile 里按 id 覆盖。
+#
+# 覆盖注意：patch 是按行**整体替换 config**，不是深合并 —— 在你自己 profile 的
+# cordis.patch.yml 里按 id 写一行时，请重述所有你仍要保留的键。
+#
+# 本文件刻意不写 apiKey：Key 属于机器本地机密，别进版本库。
+- insert:
+    - id: agnes-image
+      name: dsh-agnes-image
+      config:
+        baseUrl: https://apihub.agnes-ai.com/v1
+        model: agnes-image-2.5-flash
+        outputDir: generated-images
+        timeoutMs: 300000

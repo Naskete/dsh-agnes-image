@@ -1,0 +1,20 @@
+# 依赖与构建产物
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+*.tgz
+
+# 插件生成的图片（默认落在会话工作区，若工作区就是本仓库则忽略）
+generated-images/
+
+# 编辑器与系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+.tmp/

@@ -1,0 +1,4 @@
+{
+  "title": "Agnes 图片生成",
+  "description": "通过 Agnes AI（agnes-image-2.5-flash）生成或编辑图片，自动转存到工作区。"
+}
