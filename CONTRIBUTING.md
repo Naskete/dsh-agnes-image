@@ -42,9 +42,16 @@ dsh plugin --profile web add /path/to/dsh-agnes-image
 1. **测试必须离线可跑**。禁止在测试里发起真实网络请求——用假 `fetch`（见 `test/tool.test.mjs`）。
 2. **不要引入运行时依赖**。发布版 dsh 把依赖藏在带哈希的 pnpm 路径下，从已安装的 bundle 里解析不到；
    只用 Node 内置模块，或注入的 `ctx.*` 服务。
-3. **不要新增顶层 `response_format`**。Agnes 只接受 `extra_body.response_format`。
-4. **错误信息保持中英双语**，并且要说清「怎么修」，不只是「哪里错了」。
-5. 改了行为就更新 `CHANGELOG.md`；改了配置项/参数就更新 `README.md` 与 `README.en.md`。
+3. **不要放宽安全闸门**（`test/tool.test.mjs` 尾部的 5 个用例在盯着它们）：
+   - 本地参考图必须按**文件头**确认为 PNG / JPEG / WebP / GIF 才能内联外发；
+   - `data:` 输入只接受 `data:image/...;base64,`；
+   - 下载只接受 `http(s)`、有体积上限、内容必须是图片才落盘。
+   放宽任何一条都等于把「用户文件外泄」或「任意内容写盘」的风险重新打开，请在 PR 里给出充分理由。
+4. **不要新增顶层 `response_format`**。Agnes 只接受 `extra_body.response_format`。
+5. **错误信息保持中英双语**，并且要说清「怎么修」，不只是「哪里错了」。
+6. **不要把密钥写进任何文件**：测试用 `AGNES_API_KEY_FILE` 指向临时路径，绝不动真实的
+   `~/.dsh/agnes-image.config.json`。
+7. 改了行为就更新 `CHANGELOG.md`；改了配置项/参数就更新 `README.md` 与 `README.en.md`。
 
 ## 提 PR
 

@@ -23,7 +23,7 @@
     "图片编辑"
   ],
   "license": "MIT",
-  "author": "YOUR_GITHUB_NAME",
+  "author": "Naskete",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -50,11 +50,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image.git"
+    "url": "git+https://github.com/Naskete/dsh-agnes-image.git"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image#readme",
+  "homepage": "https://github.com/Naskete/dsh-agnes-image#readme",
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image/issues"
+    "url": "https://github.com/Naskete/dsh-agnes-image/issues"
   },
   "dsh": {
     "bundle": {

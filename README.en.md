@@ -43,7 +43,7 @@ Prerequisites:
 dsh plugin --profile web add dsh-agnes-image
 
 # From GitHub source
-dsh plugin --profile web add github:YOUR_GITHUB_NAME/dsh-agnes-image
+dsh plugin --profile web add github:Naskete/dsh-agnes-image
 
 # From a local checkout (handy while developing)
 dsh plugin --profile web add D:\path\to\dsh-agnes-image
@@ -194,6 +194,59 @@ Start here: (1) fully quit and reopen Harness; (2) confirm the key is reachable;
 | `... the limit is 12 MB` | reference image too large | compress it, or host it and pass a URL |
 | `non-JSON body` | a gateway/proxy returned HTML | check network, proxy, `baseUrl` |
 | Generation takes 30s+ | normal | nearly all of it is the provider generating |
+
+---
+
+## Security and privacy
+
+**Your key** goes into one HTTP header (`Authorization: Bearer …`) sent to the `baseUrl` you
+configured, and nowhere else: it is never logged, never echoed into the conversation, and the
+error messages only ever contain the *path* where a key is expected.
+
+**Your prompt, references and results** travel through Agnes's servers — that is how a cloud
+image model works. The plugin never uploads anything from your workspace on its own; a local
+file is only read when a path is explicitly named in the tool's `image` argument.
+
+Because that argument can be steered by a model (or by a prompt injection), three gates guard
+what may leave the machine, and three more guard what may land on disk:
+
+| Direction | Gate |
+|---|---|
+| local file → Agnes | bytes must sniff as PNG / JPEG / WebP / GIF, otherwise refused (so `~/.ssh/id_rsa` cannot be smuggled out as a "reference image") |
+| local file → Agnes | 12 MB per file (they are inlined as base64) |
+| caller → Agnes | `data:` URIs must be `data:image/…;base64,…` |
+| provider → disk | download URL must be `http(s)` |
+| provider → disk | 64 MB cap, checked against `content-length` and the real body |
+| provider → disk | content must be an image (magic bytes or `image/*`), otherwise nothing is written |
+
+**Session logs:** DSH stores the conversation verbatim under `~/.dsh/sessions/`, including any
+key you paste into the chat. Do not commit that directory — the plugin's install adds ignore
+rules to `~/.dsh/.gitignore`. If a key was ever exposed, revoke it in the Agnes console and
+create a new one.
+
+**What the plugin can do on your machine:** two things only — make HTTP requests, and write
+image files into the workspace. It runs no shell commands, evaluates no code, ships no
+dependencies, and reads no file you did not name.
+
+---
+
+## FAQ
+
+**Does it cost anything?** The plugin is free and open source; Agnes's image models are
+currently free (check their pricing page).
+
+**Do I have to say "draw"?** No. Any phrasing works as long as the intent is to create or edit
+an image.
+
+**Offline?** No — generation happens in the cloud.
+
+**Several images per call?** One call returns one image. Ask for "three variations" and the
+model will call the tool several times.
+
+**Where do the files go?** `<session workspace>/generated-images/<date>/`, unless you change
+`outputDir`.
+
+**Can I edit an existing photo?** Yes — give the model the path or URL and describe the change.
 
 ---
 

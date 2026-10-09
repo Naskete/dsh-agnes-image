@@ -19,7 +19,15 @@
 - 配置项：`apiKey`、`baseUrl`、`model`、`outputDir`、`timeoutMs`，通过 Standard Schema (`Config['~standard']`) 校验。
 - 平台适配：Windows 保留设备名（`CON`、`NUL`、`LPT1` 等）自动改名；文件名按提示词 slug + 秒级时间戳生成，避免覆盖。
 - 零依赖实现：仅使用 Node 内置模块与注入的 `tools` / `attachments` / `workspaceRegistry` 服务。
-- 测试：`node --test test/`，覆盖配置校验、工具契约、请求体形状（含 `extra_body` 规则）与落盘流程，全部离线运行。
+- 测试：`node --test`，33 个用例，覆盖配置校验、工具契约、请求体形状（含 `extra_body` 规则）、落盘流程与安全准入，全部离线运行（假 `fetch`，不需要 Key）。
 
-[Unreleased]: https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/YOUR_GITHUB_NAME/dsh-agnes-image/releases/tag/v0.1.0
+### Security
+
+- **参考图准入**：本地文件必须按**文件头**确认为 PNG / JPEG / WebP / GIF 才会被读出来内联发送；其它文件一律拒绝。这条挡住的是「被提示词注入的模型把 `~/.ssh/id_rsa`、`.credentials.yaml` 之类当作参考图外发」的场景。
+- **`data:` 输入准入**：只接受 `data:image/...;base64,`，其它 Data URI 直接拒绝。
+- **下载准入**：只接受 `http(s)` 地址；`Content-Length` 与实际体积都有 64 MB 上限（先看声明再验实际）；内容必须是图片（文件头或 `Content-Type: image/*`）才写入磁盘，避免把任意内容以图片名义落盘。
+- **本机侧防护**：安装说明中在 `~/.dsh/.gitignore` 补上忽略规则，避免密钥文件与会话记录被误提交到 git。
+- 体积边界：本地参考图单张上限 12 MB，超限报错并说明原因。
+
+[Unreleased]: https://github.com/Naskete/dsh-agnes-image/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Naskete/dsh-agnes-image/releases/tag/v0.1.0
